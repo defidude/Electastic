@@ -32,6 +32,9 @@ export function useDevice() {
   const [channels, setChannels] = useState<
     Array<{ index: number; name: string }>
   >([{ index: 0, name: "Primary" }]);
+  const [channelConfigs, setChannelConfigs] = useState<
+    Array<{ index: number; name: string; role: number; psk: Uint8Array }>
+  >([]);
 
   // Keep nodesRef in sync with state
   const updateNodes = useCallback(
@@ -45,8 +48,7 @@ export function useDevice() {
     []
   );
 
-  // Resolve a node number to a compact display name using the ref (no stale closure)
-  // Prefers short_name (Meshtastic convention), then truncated long_name, then hex ID
+  // Compact display name: short_name, truncated long_name, or hex ID
   const getNodeName = useCallback((nodeNum: number): string => {
     const node = nodesRef.current.get(nodeNum);
     if (node?.short_name) return node.short_name;
@@ -57,21 +59,19 @@ export function useDevice() {
     return `!${nodeNum.toString(16)}`;
   }, []);
 
-  // Resolve a node number to a full label for prominent UI (no truncation)
-  // Prefers short_name (with _hex suffix), then long_name, then hex ID
+  // Extended label: short_name + hex suffix, long_name, or hex fallback.
+  // Used in the header for the connected node display.
   const getFullNodeLabel = useCallback((nodeNum: number): string => {
     const node = nodesRef.current.get(nodeNum);
-    const hex = nodeNum.toString(16);
-
+    const hexId = `!${nodeNum.toString(16)}`;
     if (node?.short_name) {
-      // Avoid double-appending if device already includes the suffix
-      if (node.short_name.endsWith(`_${hex}`)) {
-        return node.short_name;
-      }
-      return `${node.short_name}_${hex}`;
+      // Avoid double-appending hex if short_name already contains it
+      return node.short_name.includes(hexId)
+        ? node.short_name
+        : `${node.short_name} ${hexId}`;
     }
     if (node?.long_name) return node.long_name;
-    return `!${hex}`;
+    return hexId;
   }, []);
 
   // ─── Helper: start polling for node updates ─────────────────────
@@ -115,13 +115,26 @@ export function useDevice() {
 
   const connect = useCallback(
     async (type: ConnectionType, httpAddress?: string) => {
-      if (deviceRef.current) return;
+      // Force-disconnect stale device before creating a new connection
+      if (deviceRef.current) {
+        cleanupSubscriptions();
+        stopPolling();
+        const oldDevice = deviceRef.current;
+        deviceRef.current = null;
+        safeDisconnect(oldDevice).catch(() => {});
+      }
 
       setState((s) => ({ ...s, status: "connecting", connectionType: type }));
 
       try {
         const device = await createConnection(type, httpAddress);
         deviceRef.current = device;
+
+        // Track whether the device reached "configured" state.
+        // During initial config the device may briefly report status 2
+        // (disconnected) before recovery — we only want to tear down
+        // subscriptions on a REAL disconnect (after being configured).
+        let wasConfigured = false;
 
         // ─── Device status ─────────────────────────────────────────
         const unsub1 = device.events.onDeviceStatus.subscribe((status) => {
@@ -137,13 +150,16 @@ export function useDevice() {
           const mapped = statusMap[status] ?? "connected";
           setState((s) => ({ ...s, status: mapped }));
 
-          // Start polling when configured (Fix 1)
+          // Start polling when configured
           if (status === 7) {
+            wasConfigured = true;
             startPolling();
           }
 
-          // If device reports disconnected, clean up
-          if (status === 2) {
+          // Only tear down on a REAL disconnect (after the device was configured).
+          // During initial config, transient status-2 events are ignored.
+          if (status === 2 && wasConfigured) {
+            cleanupSubscriptions();
             stopPolling();
             deviceRef.current = null;
             setState((s) => ({
@@ -273,8 +289,9 @@ export function useDevice() {
 
           updateNodes((prev) => {
             const updated = new Map(prev);
-            const existing = updated.get(packet.from);
-            if (!existing) return prev;
+            // Create placeholder if node isn't in map yet (position may
+            // arrive before onNodeInfoPacket for newly-discovered nodes)
+            const existing = updated.get(packet.from) || emptyNode(packet.from);
 
             const node: MeshNode = {
               ...existing,
@@ -338,20 +355,43 @@ export function useDevice() {
         const unsub8 = device.events.onChannelPacket.subscribe((channel) => {
           const ch = channel as {
             index?: number;
-            settings?: { name?: string };
+            settings?: { name?: string; psk?: Uint8Array };
             role?: number;
           };
-          if (ch.index === undefined || ch.role === 0) return;
+          if (ch.index === undefined) return;
 
-          setChannels((prev) => {
-            if (prev.find((c) => c.index === ch.index)) return prev;
-            return [
-              ...prev,
-              {
+          // Update simple channels list for chat pill selector (skip disabled)
+          if (ch.role !== 0) {
+            setChannels((prev) => {
+              const existing = prev.findIndex((c) => c.index === ch.index);
+              const entry = {
                 index: ch.index!,
-                name: ch.settings?.name || `Channel ${ch.index}`,
-              },
-            ].sort((a, b) => a.index - b.index);
+                name: ch.settings?.name || (ch.index === 0 ? "Primary" : `Channel ${ch.index}`),
+              };
+              if (existing >= 0) {
+                const updated = [...prev];
+                updated[existing] = entry;
+                return updated;
+              }
+              return [...prev, entry].sort((a, b) => a.index - b.index);
+            });
+          }
+
+          // Update full channel configs for config panel (includes disabled)
+          setChannelConfigs((prev) => {
+            const existing = prev.findIndex((c) => c.index === ch.index);
+            const entry = {
+              index: ch.index!,
+              name: ch.settings?.name || "",
+              role: ch.role ?? 0,
+              psk: ch.settings?.psk ?? new Uint8Array([1]),
+            };
+            if (existing >= 0) {
+              const updated = [...prev];
+              updated[existing] = entry;
+              return updated;
+            }
+            return [...prev, entry].sort((a, b) => a.index - b.index);
           });
         });
         unsubscribesRef.current.push(unsub8);
@@ -381,19 +421,16 @@ export function useDevice() {
           }
 
           if (mp.rxSnr || mp.rxRssi) {
-            setTelemetry((prev) => {
-              const last = prev[prev.length - 1];
-              return [
+            setTelemetry((prev) =>
+              [
                 ...prev,
                 {
                   timestamp: Date.now(),
                   snr: mp.rxSnr,
                   rssi: mp.rxRssi,
-                  batteryLevel: last?.batteryLevel,
-                  voltage: last?.voltage,
                 },
-              ].slice(-MAX_TELEMETRY_POINTS);
-            });
+              ].slice(-MAX_TELEMETRY_POINTS)
+            );
           }
         });
         unsubscribesRef.current.push(unsub9);
@@ -402,6 +439,11 @@ export function useDevice() {
         if (type === "serial") {
           device.setHeartbeatInterval(60_000);
         }
+
+        // ─── Start configuration AFTER all listeners are wired ────
+        // configure() triggers the node/channel/config dump from the
+        // device. Must happen after subscriptions so we don't miss packets.
+        device.configure();
       } catch (err) {
         console.error("Connection failed:", err);
         cleanupSubscriptions();
@@ -467,24 +509,11 @@ export function useDevice() {
   }, []);
 
   // Send an emoji reaction (tapback) to a specific message
+  // sendText signature: (text, destination, wantAck, channel, replyId, emoji)
   const sendReaction = useCallback(
     async (emoji: number, replyId: number, channel = 0) => {
       if (!deviceRef.current) throw new Error("Not connected");
-      // Use type assertion for extra sendText params (emoji/replyId)
-      // The Meshtastic Data protobuf supports these fields
-      const device = deviceRef.current as {
-        sendText: (
-          text: string,
-          destination: string | number,
-          wantAck: boolean,
-          channel: number,
-          wantResponse?: boolean,
-          echoResponse?: boolean,
-          replyId?: number,
-          emoji?: number
-        ) => Promise<number>;
-      };
-      await device.sendText("", "broadcast", true, channel, undefined, undefined, replyId, emoji);
+      await deviceRef.current.sendText("", "broadcast", true, channel, replyId, emoji);
     },
     []
   );
@@ -535,18 +564,54 @@ export function useDevice() {
     await deviceRef.current.requestPosition(0xffffffff);
   }, []);
 
+  // ─── Channel management ──────────────────────────────────────
+  const setDeviceChannel = useCallback(async (channelConfig: {
+    index: number;
+    role: number;
+    settings: { name: string; psk: Uint8Array };
+  }) => {
+    if (!deviceRef.current) throw new Error("Not connected");
+    await deviceRef.current.setChannel({
+      index: channelConfig.index,
+      role: channelConfig.role,
+      settings: channelConfig.settings,
+    } as never);
+  }, []);
+
+  const clearChannel = useCallback(async (index: number) => {
+    if (!deviceRef.current) throw new Error("Not connected");
+    await deviceRef.current.clearChannel(index);
+  }, []);
+
+  // ─── Node management ────────────────────────────────────────
+  const removeNode = useCallback(async (nodeNum: number) => {
+    if (!deviceRef.current) throw new Error("Not connected");
+    await deviceRef.current.removeNodeByNum(nodeNum);
+    // Also remove from local state and DB
+    updateNodes((prev) => {
+      const updated = new Map(prev);
+      updated.delete(nodeNum);
+      return updated;
+    });
+    await window.electronAPI.db.deleteNode(nodeNum);
+  }, [updateNodes]);
+
   return {
     state,
     messages,
     nodes,
     telemetry,
     channels,
+    channelConfigs,
     connect,
     disconnect,
     sendMessage,
     sendReaction,
     setConfig,
     commitConfig,
+    setDeviceChannel,
+    clearChannel,
+    removeNode,
     reboot,
     shutdown,
     factoryReset,

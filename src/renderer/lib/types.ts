@@ -69,6 +69,7 @@ declare global {
         getNodes: () => Promise<MeshNode[]>;
         clearMessages: () => Promise<unknown>;
         clearNodes: () => Promise<unknown>;
+        deleteNode: (nodeId: number) => Promise<unknown>;
         updateMessageStatus: (
           packetId: number,
           status: string,
@@ -87,6 +88,7 @@ declare global {
       ) => () => void;
       selectSerialPort: (portId: string) => void;
       cancelSerialSelection: () => void;
+      clearSessionData: () => Promise<void>;
     };
   }
 }

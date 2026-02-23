@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     getNodes: () => ipcRenderer.invoke("db:getNodes"),
     clearMessages: () => ipcRenderer.invoke("db:clearMessages"),
     clearNodes: () => ipcRenderer.invoke("db:clearNodes"),
+    deleteNode: (nodeId: number) => ipcRenderer.invoke("db:deleteNode", nodeId),
     updateMessageStatus: (packetId: number, status: string, error?: string) =>
       ipcRenderer.invoke("db:updateMessageStatus", packetId, status, error),
     exportDb: () => ipcRenderer.invoke("db:export"),
@@ -88,4 +89,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   cancelSerialSelection: () => {
     ipcRenderer.send("serial-port-cancelled");
   },
+
+  // ─── Session management ────────────────────────────────────────
+  clearSessionData: () => ipcRenderer.invoke("session:clearData"),
 });

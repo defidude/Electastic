@@ -51,8 +51,9 @@ export async function createConnection(
 
   const device = new MeshDevice(transport as any);
 
-  // Request device configuration after connection
-  device.configure();
+  // NOTE: Do NOT call device.configure() here. It must be called AFTER
+  // event subscriptions are set up in useDevice.ts, otherwise the initial
+  // node/channel/config dump is emitted before any listeners exist.
 
   return device;
 }
@@ -63,24 +64,20 @@ export async function createConnection(
  */
 export async function safeDisconnect(device: MeshDevice): Promise<void> {
   try {
-    // MeshDevice.disconnect() calls transport.toDevice.close() and
-    // transport.disconnect(). BLE transport doesn't have disconnect(),
-    // so we catch and ignore that specific error.
     await device.disconnect();
   } catch (err) {
-    // If the transport doesn't have disconnect(), that's OK.
-    // Also handle already-closed streams.
     const msg = err instanceof Error ? err.message : String(err);
     if (
-      msg.includes("disconnect is not a function") ||
       msg.includes("not a function") ||
       msg.includes("already been closed") ||
       msg.includes("locked")
     ) {
-      // Expected for BLE transport — clean up manually
-      device.complete();
+      // Expected for BLE transport — swallow
     } else {
       console.warn("Disconnect error:", err);
     }
+  } finally {
+    // Always complete device streams to prevent memory leaks
+    try { device.complete(); } catch { /* already completed */ }
   }
 }

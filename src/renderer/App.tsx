@@ -106,6 +106,9 @@ export default function App() {
             <ConfigPanel
               onSetConfig={device.setConfig}
               onCommit={device.commitConfig}
+              onSetChannel={device.setDeviceChannel}
+              onClearChannel={device.clearChannel}
+              channelConfigs={device.channelConfigs}
               isConnected={isConfigured}
             />
           )}
@@ -126,11 +129,13 @@ export default function App() {
           {activeTab === 6 && (
             <AdminPanel
               nodes={device.nodes}
+              messageCount={device.messages.length}
               onReboot={device.reboot}
               onShutdown={device.shutdown}
               onFactoryReset={device.factoryReset}
               onResetNodeDb={device.resetNodeDb}
               onTraceRoute={device.traceRoute}
+              onRemoveNode={device.removeNode}
               isConnected={isConfigured}
             />
           )}

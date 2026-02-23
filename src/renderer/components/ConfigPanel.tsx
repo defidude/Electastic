@@ -1,8 +1,22 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+interface ChannelConfig {
+  index: number;
+  name: string;
+  role: number;
+  psk: Uint8Array;
+}
 
 interface Props {
   onSetConfig: (config: unknown) => Promise<void>;
   onCommit: () => Promise<void>;
+  onSetChannel: (config: {
+    index: number;
+    role: number;
+    settings: { name: string; psk: Uint8Array };
+  }) => Promise<void>;
+  onClearChannel: (index: number) => Promise<void>;
+  channelConfigs: ChannelConfig[];
   isConnected: boolean;
 }
 
@@ -210,9 +224,35 @@ function ConfigSection({
   );
 }
 
+function pskToHex(psk: Uint8Array): string {
+  return Array.from(psk)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function hexToPsk(hex: string): Uint8Array {
+  const bytes = hex.match(/.{1,2}/g) || [];
+  return new Uint8Array(bytes.map((b) => parseInt(b, 16)));
+}
+
+function generateRandomPsk(): Uint8Array {
+  const psk = new Uint8Array(32);
+  crypto.getRandomValues(psk);
+  return psk;
+}
+
+const CHANNEL_ROLES = [
+  { value: 0, label: "Disabled" },
+  { value: 1, label: "Primary" },
+  { value: 2, label: "Secondary" },
+];
+
 export default function ConfigPanel({
   onSetConfig,
   onCommit,
+  onSetChannel,
+  onClearChannel,
+  channelConfigs,
   isConnected,
 }: Props) {
   // ─── LoRa settings ────────────────────────────────────────────
@@ -474,6 +514,16 @@ export default function ConfigPanel({
         />
       </ConfigSection>
 
+      {/* ═══ Channels ═══ */}
+      <ChannelSection
+        channelConfigs={channelConfigs}
+        onSetChannel={onSetChannel}
+        onClearChannel={onClearChannel}
+        onCommit={onCommit}
+        disabled={disabled}
+        setStatus={setStatus}
+      />
+
       {/* Status */}
       {status && (
         <div
@@ -501,5 +551,231 @@ export default function ConfigPanel({
         </p>
       </div>
     </div>
+  );
+}
+
+// ─── Channel Management Section ─────────────────────────────────
+function ChannelSection({
+  channelConfigs,
+  onSetChannel,
+  onClearChannel,
+  onCommit,
+  disabled,
+  setStatus,
+}: {
+  channelConfigs: ChannelConfig[];
+  onSetChannel: Props["onSetChannel"];
+  onClearChannel: Props["onClearChannel"];
+  onCommit: Props["onCommit"];
+  disabled: boolean;
+  setStatus: (s: string) => void;
+}) {
+  const [editChannels, setEditChannels] = useState<
+    Array<{ index: number; name: string; role: number; pskHex: string }>
+  >([]);
+  const [saving, setSaving] = useState<number | null>(null);
+
+  // Initialize edit state from device channel configs
+  useEffect(() => {
+    if (channelConfigs.length === 0) return;
+    setEditChannels(
+      channelConfigs.map((ch) => ({
+        index: ch.index,
+        name: ch.name,
+        role: ch.role,
+        pskHex: pskToHex(ch.psk),
+      }))
+    );
+  }, [channelConfigs]);
+
+  // Ensure we always show slots 0–7
+  const slots = Array.from({ length: 8 }, (_, i) => {
+    const existing = editChannels.find((ch) => ch.index === i);
+    return existing ?? { index: i, name: "", role: 0, pskHex: "01" };
+  });
+
+  const updateSlot = (
+    index: number,
+    update: Partial<{ name: string; role: number; pskHex: string }>
+  ) => {
+    setEditChannels((prev) => {
+      const idx = prev.findIndex((ch) => ch.index === index);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], ...update };
+        return updated;
+      }
+      return [
+        ...prev,
+        { index, name: "", role: 0, pskHex: "01", ...update },
+      ].sort((a, b) => a.index - b.index);
+    });
+  };
+
+  const saveChannel = async (slot: typeof slots[0]) => {
+    setSaving(slot.index);
+    try {
+      if (slot.role === 0 && slot.index !== 0) {
+        await onClearChannel(slot.index);
+      } else {
+        await onSetChannel({
+          index: slot.index,
+          role: slot.role,
+          settings: {
+            name: slot.name,
+            psk: hexToPsk(slot.pskHex),
+          },
+        });
+      }
+      await onCommit();
+      setStatus(`Channel ${slot.index} saved successfully!`);
+    } catch (err) {
+      setStatus(
+        `Failed: ${err instanceof Error ? err.message : "Unknown error"}`
+      );
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <details className="group bg-gray-800/50 rounded-lg border border-gray-700">
+      <summary className="px-4 py-3 cursor-pointer text-gray-200 font-medium flex items-center justify-between hover:bg-gray-800 rounded-lg transition-colors">
+        <span>Channels</span>
+        <svg
+          className="w-4 h-4 text-gray-500 group-open:rotate-180 transition-transform"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </summary>
+      <div className="px-4 pb-4 space-y-3">
+        {slots.map((slot) => (
+          <div
+            key={slot.index}
+            className={`p-3 rounded-lg border ${
+              slot.role !== 0
+                ? "border-gray-600 bg-gray-800/50"
+                : "border-gray-700/50 bg-gray-900/30 opacity-60"
+            }`}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm font-medium text-gray-300">
+                {slot.index === 0 ? "Primary" : `Channel ${slot.index}`}
+              </span>
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${
+                  slot.role === 1
+                    ? "bg-green-900/50 text-green-400"
+                    : slot.role === 2
+                    ? "bg-blue-900/50 text-blue-400"
+                    : "bg-gray-700 text-gray-500"
+                }`}
+              >
+                {CHANNEL_ROLES.find((r) => r.value === slot.role)?.label ?? "Disabled"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label className="text-xs text-gray-500">Name</label>
+                <input
+                  type="text"
+                  value={slot.name}
+                  onChange={(e) =>
+                    updateSlot(slot.index, { name: e.target.value })
+                  }
+                  disabled={disabled}
+                  placeholder={slot.index === 0 ? "Primary" : "Channel name"}
+                  className="w-full px-2 py-1.5 bg-gray-700 rounded text-sm text-gray-200 border border-gray-600 focus:border-green-500 focus:outline-none disabled:opacity-50"
+                />
+              </div>
+              {slot.index !== 0 && (
+                <div>
+                  <label className="text-xs text-gray-500">Role</label>
+                  <select
+                    value={slot.role}
+                    onChange={(e) =>
+                      updateSlot(slot.index, {
+                        role: Number(e.target.value),
+                      })
+                    }
+                    disabled={disabled}
+                    className="w-full px-2 py-1.5 bg-gray-700 rounded text-sm text-gray-200 border border-gray-600 focus:border-green-500 focus:outline-none disabled:opacity-50"
+                  >
+                    <option value={0}>Disabled</option>
+                    <option value={2}>Secondary</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* PSK */}
+            <div className="mb-2">
+              <label className="text-xs text-gray-500">Pre-Shared Key</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={slot.pskHex}
+                  onChange={(e) =>
+                    updateSlot(slot.index, {
+                      pskHex: e.target.value.replace(/[^0-9a-fA-F]/g, ""),
+                    })
+                  }
+                  disabled={disabled}
+                  placeholder="01"
+                  className="flex-1 px-2 py-1.5 bg-gray-700 rounded text-xs font-mono text-gray-200 border border-gray-600 focus:border-green-500 focus:outline-none disabled:opacity-50"
+                />
+                <button
+                  onClick={() =>
+                    updateSlot(slot.index, { pskHex: "01" })
+                  }
+                  disabled={disabled}
+                  className="px-2 py-1.5 text-xs bg-gray-700 text-gray-400 hover:text-gray-200 rounded disabled:opacity-50"
+                  title="Default PSK"
+                >
+                  Def
+                </button>
+                <button
+                  onClick={() =>
+                    updateSlot(slot.index, {
+                      pskHex: pskToHex(generateRandomPsk()),
+                    })
+                  }
+                  disabled={disabled}
+                  className="px-2 py-1.5 text-xs bg-gray-700 text-gray-400 hover:text-gray-200 rounded disabled:opacity-50"
+                  title="Generate random 256-bit PSK"
+                >
+                  Rand
+                </button>
+                <button
+                  onClick={() => updateSlot(slot.index, { pskHex: "00" })}
+                  disabled={disabled}
+                  className="px-2 py-1.5 text-xs bg-gray-700 text-gray-400 hover:text-gray-200 rounded disabled:opacity-50"
+                  title="No encryption"
+                >
+                  None
+                </button>
+              </div>
+            </div>
+
+            <button
+              onClick={() => saveChannel(slot)}
+              disabled={disabled || saving !== null}
+              className="w-full px-3 py-1.5 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:text-gray-400 text-white text-xs font-medium rounded transition-colors"
+            >
+              {saving === slot.index ? "Saving..." : "Save Channel"}
+            </button>
+          </div>
+        ))}
+        <p className="text-xs text-gray-500">
+          Changes are written to the device immediately. PSK "01" = default
+          Meshtastic key. "00" = no encryption. Use "Rand" for a private
+          channel.
+        </p>
+      </div>
+    </details>
   );
 }

@@ -41,7 +41,9 @@ function createWindow() {
     (event, devices, callback) => {
       event.preventDefault();
 
-      // Store the callback so we can resolve it when the user picks a device
+      // Chromium fires this event repeatedly during discovery with an
+      // updated device list and a NEW callback each time. Simply overwrite
+      // the reference — Chromium manages the lifecycle of old callbacks.
       pendingBluetoothCallback = callback;
 
       // Deduplicate devices by ID before sending to renderer
@@ -209,6 +211,11 @@ ipcMain.handle("db:clearNodes", () => {
   return db.prepare("DELETE FROM nodes").run();
 });
 
+ipcMain.handle("db:deleteNode", (_event, nodeId: number) => {
+  const db = getDatabase();
+  return db.prepare("DELETE FROM nodes WHERE node_id = ?").run(nodeId);
+});
+
 // ─── IPC: Update message delivery status ────────────────────────────
 ipcMain.handle(
   "db:updateMessageStatus",
@@ -248,6 +255,22 @@ ipcMain.handle("db:import", async () => {
     return summary;
   }
   return null;
+});
+
+// ─── IPC: Clear Chromium session data (BLE cache, cookies, etc.) ──
+ipcMain.handle("session:clearData", async () => {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) return;
+  await win.webContents.session.clearStorageData({
+    storages: [
+      "cookies",
+      "localstorage",
+      "cachestorage",
+      "shadercache",
+      "serviceworkers",
+    ],
+  });
+  await win.webContents.session.clearCache();
 });
 
 // ─── App lifecycle ─────────────────────────────────────────────────

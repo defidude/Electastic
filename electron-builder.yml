@@ -8,6 +8,8 @@ files:
   - dist-electron/**/*
   - node_modules/**/*
   - package.json
+asarUnpack:
+  - "node_modules/better-sqlite3/**/*"
 mac:
   category: public.app-category.utilities
   target:

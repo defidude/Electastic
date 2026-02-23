@@ -3,21 +3,25 @@ import type { MeshNode } from "../lib/types";
 
 interface Props {
   nodes: Map<number, MeshNode>;
+  messageCount: number;
   onReboot: (seconds: number) => Promise<void>;
   onShutdown: (seconds: number) => Promise<void>;
   onFactoryReset: () => Promise<void>;
   onResetNodeDb: () => Promise<void>;
   onTraceRoute: (destination: number) => Promise<void>;
+  onRemoveNode: (nodeNum: number) => Promise<void>;
   isConnected: boolean;
 }
 
 export default function AdminPanel({
   nodes,
+  messageCount,
   onReboot,
   onShutdown,
   onFactoryReset,
   onResetNodeDb,
   onTraceRoute,
+  onRemoveNode,
   isConnected,
 }: Props) {
   const [targetNode, setTargetNode] = useState("");
@@ -150,22 +154,45 @@ export default function AdminPanel({
         <h3 className="text-sm font-medium text-gray-400">
           Network Diagnostics
         </h3>
-        <button
-          onClick={() => {
-            const target = getTargetNodeNum();
-            if (target) {
-              onTraceRoute(target).then(() =>
-                setStatus("Trace route request sent.")
-              );
-            } else {
-              setStatus("Enter a target node for trace route.");
-            }
-          }}
-          disabled={!isConnected || !targetNode}
-          className="w-full px-4 py-3 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
-        >
-          Trace Route to Target
-        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => {
+              const target = getTargetNodeNum();
+              if (target) {
+                onTraceRoute(target).then(() =>
+                  setStatus("Trace route request sent.")
+                );
+              } else {
+                setStatus("Enter a target node for trace route.");
+              }
+            }}
+            disabled={!isConnected || !targetNode}
+            className="px-4 py-3 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+          >
+            Trace Route
+          </button>
+
+          <button
+            onClick={() => {
+              const target = getTargetNodeNum();
+              if (target) {
+                executeAction("Remove Node", () => onRemoveNode(target));
+              } else {
+                setStatus("Enter a target node to remove.");
+              }
+            }}
+            disabled={!isConnected || !targetNode}
+            className={`px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+              confirmAction === "Remove Node"
+                ? "bg-yellow-600 text-white"
+                : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+            } disabled:opacity-50`}
+          >
+            {confirmAction === "Remove Node"
+              ? "Confirm Remove?"
+              : "Remove Node"}
+          </button>
+        </div>
       </div>
 
       {/* Data Management */}
@@ -247,8 +274,8 @@ export default function AdminPanel({
             }`}
           >
             {confirmAction === "Clear Messages"
-              ? "Confirm Clear?"
-              : "Clear Messages"}
+              ? `Clear ${messageCount} messages?`
+              : `Clear Messages (${messageCount})`}
           </button>
 
           <button
@@ -264,8 +291,27 @@ export default function AdminPanel({
             }`}
           >
             {confirmAction === "Clear Nodes"
-              ? "Confirm Clear?"
-              : "Clear Nodes"}
+              ? `Clear ${nodes.size} nodes?`
+              : `Clear Nodes (${nodes.size})`}
+          </button>
+
+          <button
+            onClick={() =>
+              executeAction("Clear All Data", async () => {
+                await window.electronAPI.db.clearMessages();
+                await window.electronAPI.db.clearNodes();
+                await window.electronAPI.clearSessionData();
+              })
+            }
+            className={`col-span-2 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+              confirmAction === "Clear All Data"
+                ? "bg-red-600 text-white"
+                : "bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800"
+            }`}
+          >
+            {confirmAction === "Clear All Data"
+              ? "CONFIRM CLEAR ALL?"
+              : "Clear All Local Data & Cache"}
           </button>
         </div>
       </div>

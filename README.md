@@ -15,9 +15,13 @@ Connect to your Meshtastic devices over Bluetooth, USB Serial, or WiFi — no py
 
 ### Prerequisites
 
-- **Node.js** 18+ (LTS recommended)
-- **npm** 9+
-- A Meshtastic device
+- **Node.js 20+** (LTS recommended — [download here](https://nodejs.org/))
+- **npm 9+** (included with Node.js)
+- **Build tools** for compiling the native SQLite module:
+  - **Mac**: Xcode Command Line Tools — run `xcode-select --install`
+  - **Linux**: `sudo apt install build-essential python3` (Debian/Ubuntu)
+  - **Windows**: [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload
+- A Meshtastic device (any hardware running Meshtastic firmware)
 
 ### Mac
 
@@ -28,7 +32,9 @@ npm install
 npm start
 ```
 
-You may need to allow Bluetooth access in **System Settings > Privacy & Security > Bluetooth**.
+> **Note:** `npm install` automatically compiles the native SQLite module for Electron via `electron-rebuild`. If it fails, make sure Xcode Command Line Tools are installed.
+
+On first Bluetooth connection, macOS will show a system popup requesting Bluetooth permission — you must accept. If you accidentally denied it, go to **System Settings > Privacy & Security > Bluetooth** and toggle Electastic on.
 
 ### Linux
 
@@ -39,7 +45,12 @@ npm install
 npm start
 ```
 
-BLE requires BlueZ installed. If Bluetooth doesn't work, try launching with `--enable-features=WebBluetooth`.
+BLE requires BlueZ installed. If Bluetooth doesn't work, try launching with `--enable-features=WebBluetooth`. For serial access, add yourself to the `dialout` group:
+
+```bash
+sudo usermod -a -G dialout $USER
+# Then log out and back in
+```
 
 ### Windows
 
@@ -50,24 +61,31 @@ npm install
 npm start
 ```
 
-Should work out of the box. If serial isn't detected, make sure you have the correct USB drivers for your device.
+Should work out of the box. If serial isn't detected, make sure you have the correct USB drivers for your device (e.g., CP210x or CH340 drivers).
 
 ---
 
-## Building
+## Connecting Your Device
+
+1. **Power on** your Meshtastic device
+2. **Put it in Bluetooth pairing mode** (if connecting via BLE)
+3. Open Electastic and go to the **Connection** tab
+4. Select your connection type (Bluetooth / USB Serial / WiFi)
+5. Click **Connect** and select your device from the picker
+6. Wait for status to show **Configured** — you're connected!
+
+---
+
+## Building the Distributable
 
 ```bash
-# Production build
-npm run build
-
-# Run the production build
-npm start
-
-# Package as distributable
-npm run dist:mac      # macOS .dmg
-npm run dist:linux    # Linux .AppImage / .deb
-npm run dist:win      # Windows .exe
+# Build for your platform
+npm run dist:mac      # macOS → .dmg + .zip in release/
+npm run dist:linux    # Linux → .AppImage + .deb in release/
+npm run dist:win      # Windows → .exe installer in release/
 ```
+
+The distributable is output to the `release/` directory.
 
 ---
 
@@ -77,12 +95,13 @@ npm run dist:win      # Windows .exe
 - **USB Serial** — plug in via USB cable
 - **WiFi/HTTP** — connect to network-enabled nodes
 - **Chat** — send/receive messages across channels with delivery indicators (ACK/NAK) and emoji reactions (tapback)
+- **Channel Management** — create and configure channels with custom names and PSK encryption
 - **Node List** — all discovered nodes with SNR, battery, GPS, last heard
 - **Node Detail Modal** — click any node or sender name for full info
 - **Map** — interactive OpenStreetMap with node positions
 - **Telemetry** — battery voltage and signal quality charts
 - **Radio Config** — region, modem preset, device role, GPS, power, Bluetooth, display settings
-- **Admin** — reboot, shutdown, factory reset, trace route, DB export/import
+- **Admin** — reboot, shutdown, factory reset, trace route, node removal, DB export/import/clear
 - **Persistent Storage** — messages and nodes saved locally via SQLite
 - **Dark UI** — custom scrollbar, tab icons, polished chat bubbles
 
@@ -124,6 +143,39 @@ src/
     ├── hooks/      # useDevice — Meshtastic device state management
     └── lib/        # Transport setup, TypeScript types
 ```
+
+---
+
+## Troubleshooting
+
+### `npm install` fails during electron-rebuild
+
+You're missing build tools for compiling the native SQLite module:
+- **Mac**: `xcode-select --install`
+- **Linux**: `sudo apt install build-essential python3`
+- **Windows**: Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload
+
+### BLE connection fails with "Connection attempt failed"
+
+- Make sure your device has Bluetooth enabled and is in **pairing mode**
+- On macOS: Check **System Settings > Privacy & Security > Bluetooth**
+- Try disconnecting fully first, then reconnecting
+- If the device picker never appears, restart the app
+
+### Serial port not detected
+
+- Ensure your USB drivers are installed for your device (CP210x, CH340, etc.)
+- On Linux, add yourself to the `dialout` group: `sudo usermod -a -G dialout $USER`
+
+### App crashes on launch (macOS distributable)
+
+- This may be a native module signing issue — try rebuilding: `npm run dist:mac`
+- If building from source: make sure `npm install` completed without errors
+
+### App shows "disconnected" but device is still on
+
+- The Bluetooth connection can drop silently. Click Disconnect, then Connect again
+- For serial: the USB cable may have been bumped — reconnect
 
 ---
 
