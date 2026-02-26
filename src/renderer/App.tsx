@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useDevice } from "./hooks/useDevice";
-import { ToastProvider } from "./components/Toast";
+import { useToast } from "./components/Toast";
 import Tabs from "./components/Tabs";
 import ErrorBoundary from "./components/ErrorBoundary";
 import NodeDetailModal from "./components/NodeDetailModal";
@@ -25,6 +25,47 @@ export default function App() {
   const [selectedNodeId, setSelectedNodeId] = useState<number | null>(null);
   const [pendingDmTarget, setPendingDmTarget] = useState<number | null>(null);
   const device = useDevice();
+  const { addToast } = useToast();
+  const prevStatusRef = useRef(device.state.status);
+
+  // ─── Toast + desktop notifications for BLE state transitions ──
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    const curr = device.state.status;
+    prevStatusRef.current = curr;
+
+    if (prev === curr) return;
+
+    // Entered reconnecting from an active state
+    if (
+      curr === "reconnecting" &&
+      (prev === "configured" || prev === "connected" || prev === "stale")
+    ) {
+      addToast("BLE connection lost — reconnecting...", "warning", 6000);
+      try {
+        new Notification("Electastic", {
+          body: "BLE connection lost. Attempting to reconnect...",
+          silent: false,
+        });
+      } catch { /* notifications may not be available */ }
+    }
+
+    // Recovered from reconnecting
+    if (curr === "configured" && prev === "reconnecting") {
+      addToast("BLE connection restored", "success");
+      try {
+        new Notification("Electastic", {
+          body: "BLE connection restored.",
+          silent: false,
+        });
+      } catch { /* notifications may not be available */ }
+    }
+
+    // Failed to reconnect (gave up — serial/HTTP only)
+    if (curr === "disconnected" && prev === "reconnecting") {
+      addToast("Could not reconnect — connection lost", "error", 8000);
+    }
+  }, [device.state.status, addToast]);
 
   const isConfigured = device.state.status === "configured";
   const isOperational = isConfigured || device.state.status === "stale";
@@ -70,7 +111,6 @@ export default function App() {
   }[device.state.status];
 
   return (
-    <ToastProvider>
       <div className="flex flex-col h-screen">
         {/* Header */}
         <header
@@ -103,6 +143,7 @@ export default function App() {
         <ConnectionBanner
           status={device.state.status}
           reconnectAttempt={device.state.reconnectAttempt}
+          connectionType={device.state.connectionType}
           onReconnect={handleReconnect}
         />
 
@@ -209,7 +250,6 @@ export default function App() {
           isConnected={isOperational}
         />
       </div>
-    </ToastProvider>
   );
 }
 
@@ -217,10 +257,12 @@ export default function App() {
 function ConnectionBanner({
   status,
   reconnectAttempt,
+  connectionType,
   onReconnect,
 }: {
   status: string;
   reconnectAttempt?: number;
+  connectionType?: string | null;
   onReconnect: () => void;
 }) {
   if (status === "stale") {
@@ -243,11 +285,18 @@ function ConnectionBanner({
   }
 
   if (status === "reconnecting") {
+    const attempt = reconnectAttempt ?? 1;
+    // BLE retries forever; serial/HTTP have a 5-attempt limit
+    const attemptText =
+      connectionType === "ble"
+        ? `attempt ${attempt}`
+        : `attempt ${attempt}/5`;
+
     return (
       <div className="bg-orange-900/80 border-b border-orange-700 px-4 py-2 flex items-center gap-2">
         <span className="text-orange-400 animate-spin inline-block">⟳</span>
         <span className="text-orange-200 text-sm animate-pulse">
-          Reconnecting... attempt {reconnectAttempt ?? 1}/5
+          Reconnecting... {attemptText}
         </span>
       </div>
     );

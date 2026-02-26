@@ -86,6 +86,15 @@ export async function reconnectBle(): Promise<MeshDevice> {
     throw new Error("No previously connected BLE device found for reconnection");
   }
 
+  // Force-disconnect stale GATT before reconnecting. This ensures we get
+  // fresh GATT notification subscriptions — the most common failure mode
+  // is notifications silently dying while the GATT link stays "connected".
+  if ((target as any).gatt?.connected) {
+    try { (target as any).gatt.disconnect(); } catch { /* ignore */ }
+    // Wait for Chromium to process the disconnect before reconnecting
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
   // Let the transport library handle GATT connection internally
   // (both createFromDevice and prepareConnection call gatt.connect())
   let transport: any;

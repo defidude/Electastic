@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, powerMonitor } from "electron";
 import path from "path";
 import { initDatabase, getDatabase, exportDatabase, mergeDatabase } from "./database";
 
@@ -326,6 +326,14 @@ app.whenReady().then(() => {
     app.quit();
     return;
   }
+
+  // ─── Power monitor: forward suspend/resume to renderer ──────────
+  powerMonitor.on("suspend", () => {
+    mainWindow?.webContents.send("power-suspend");
+  });
+  powerMonitor.on("resume", () => {
+    mainWindow?.webContents.send("power-resume");
+  });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

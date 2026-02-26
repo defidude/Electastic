@@ -92,6 +92,8 @@ declare global {
       ) => () => void;
       selectSerialPort: (portId: string) => void;
       cancelSerialSelection: () => void;
+      onPowerSuspend: (cb: () => void) => () => void;
+      onPowerResume: (cb: () => void) => () => void;
       clearSessionData: () => Promise<void>;
     };
   }

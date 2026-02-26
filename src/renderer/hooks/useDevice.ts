@@ -14,15 +14,17 @@ const POLL_INTERVAL_MS = 30_000; // 30 seconds
 const BROADCAST_ADDR = 0xffffffff;
 
 // ─── Connection watchdog thresholds (per transport) ────────────────
-const BLE_STALE_THRESHOLD_MS = 90_000;    // 90s — show warning
-const BLE_DEAD_THRESHOLD_MS = 180_000;    // 3min — trigger reconnect
+const BLE_STALE_THRESHOLD_MS = 45_000;     // 45s — show warning
+const BLE_DEAD_THRESHOLD_MS = 90_000;      // 90s — trigger reconnect
 const SERIAL_STALE_THRESHOLD_MS = 120_000; // 2min
 const SERIAL_DEAD_THRESHOLD_MS = 300_000;  // 5min
 const HTTP_STALE_THRESHOLD_MS = 60_000;    // 1min
 const HTTP_DEAD_THRESHOLD_MS = 120_000;    // 2min
-const WATCHDOG_INTERVAL_MS = 15_000;       // Check every 15s
-const MAX_RECONNECT_ATTEMPTS = 5;
-const BLE_HEARTBEAT_INTERVAL_MS = 30_000;  // 30s heartbeat for BLE
+const WATCHDOG_INTERVAL_MS = 10_000;       // Check every 10s
+const MAX_RECONNECT_ATTEMPTS = 5;          // Serial/HTTP only
+const BLE_HEARTBEAT_INTERVAL_MS = 15_000;  // 15s heartbeat for BLE
+const BLE_FAST_RECONNECT_ATTEMPTS = 5;     // Phase 1: exponential backoff 2s→32s
+const BLE_PERIODIC_RECONNECT_MS = 60_000;  // Phase 2: try every 60s indefinitely
 
 export function useDevice() {
   const deviceRef = useRef<MeshDevice | null>(null);
@@ -217,6 +219,71 @@ export function useDevice() {
       }
     };
   }, [cleanupSubscriptions, stopPolling, stopWatchdog, stopBleHeartbeat]);
+
+  // ─── macOS sleep/wake handling ─────────────────────────────────
+  useEffect(() => {
+    const unsubSuspend = window.electronAPI.onPowerSuspend(() => {
+      console.log("[Power] System suspending — pausing watchdog & heartbeat");
+      stopWatchdog();
+      stopBleHeartbeat();
+    });
+
+    const unsubResume = window.electronAPI.onPowerResume(() => {
+      console.log("[Power] System resumed — probing BLE health");
+      if (!connectionParamsRef.current || connectionParamsRef.current.type !== "ble") {
+        // Not a BLE connection; just restart monitoring
+        startWatchdog();
+        return;
+      }
+
+      // Wait for OS BLE stack to reinitialize after wake
+      setTimeout(async () => {
+        if (!deviceRef.current || isReconnectingRef.current) return;
+
+        // Probe: try a heartbeat write
+        try {
+          await deviceRef.current.heartbeat();
+          // BLE is alive — restart monitoring
+          lastDataReceivedRef.current = Date.now();
+          startWatchdog();
+        } catch {
+          // BLE is dead after wake — trigger reconnect
+          console.warn("[Power] BLE heartbeat failed after resume, reconnecting");
+          handleConnectionLostRef.current();
+        }
+      }, 3000);
+    });
+
+    return () => {
+      unsubSuspend();
+      unsubResume();
+    };
+  }, [stopWatchdog, stopBleHeartbeat, startWatchdog]);
+
+  // ─── Visibility change: check BLE health on foreground ─────────
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState !== "visible") return;
+      if (!connectionParamsRef.current || connectionParamsRef.current.type !== "ble") return;
+      if (isReconnectingRef.current || !deviceRef.current) return;
+
+      const elapsed = Date.now() - lastDataReceivedRef.current;
+      const { stale, dead } = getThresholds();
+
+      if (elapsed > dead) {
+        // Already dead — trigger reconnect immediately
+        handleConnectionLostRef.current();
+      } else if (elapsed > stale) {
+        // Stale — probe heartbeat to confirm
+        deviceRef.current.heartbeat().catch(() => {
+          handleConnectionLostRef.current();
+        });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, [getThresholds]);
 
   // ─── Wire up all event subscriptions for a device ─────────────
   const wireSubscriptions = useCallback(
@@ -584,11 +651,15 @@ export function useDevice() {
       unsubscribesRef.current.push(unsub10);
 
       // ─── BLE heartbeat with failure detection ──────────────────
+      // NOTE: We intentionally do NOT call touchLastData() on heartbeat
+      // success. A successful GATT write only proves the link-layer is
+      // alive — it does NOT mean notifications are flowing. Only real
+      // mesh events (messages, telemetry, position, onMeshHeartbeat)
+      // should reset the data-freshness timer.
       if (type === "ble") {
         bleHeartbeatRef.current = setInterval(async () => {
           try {
             await deviceRef.current?.heartbeat();
-            touchLastData();
           } catch (err) {
             console.warn("BLE heartbeat write failed:", err);
             // A failed GATT characteristic write = connection is dead
@@ -642,7 +713,10 @@ export function useDevice() {
   // Keep the ref in sync
   handleConnectionLostRef.current = handleConnectionLost;
 
-  // ─── Reconnection with exponential backoff ────────────────────
+  // ─── Reconnection with adaptive backoff ────────────────────────
+  // BLE: never gives up — fast exponential backoff (2s→32s) for first
+  //       5 attempts, then periodic retry every 60s indefinitely.
+  // Serial/HTTP: 5 attempts with exponential backoff, then give up.
   const attemptReconnect = useCallback(async () => {
     const params = connectionParamsRef.current;
     if (!params) {
@@ -651,7 +725,10 @@ export function useDevice() {
       return;
     }
 
-    if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
+    const isBle = params.type === "ble";
+
+    // Serial/HTTP: give up after MAX_RECONNECT_ATTEMPTS
+    if (!isBle && reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
       isReconnectingRef.current = false;
       reconnectAttemptRef.current = 0;
       setState((s) => ({ ...s, status: "disconnected", connectionType: null }));
@@ -668,7 +745,16 @@ export function useDevice() {
       reconnectAttempt: reconnectAttemptRef.current,
     }));
 
-    const delay = Math.min(2000 * Math.pow(2, reconnectAttemptRef.current - 1), 32000);
+    // Two-phase backoff for BLE:
+    //   Phase 1 (attempts 1-5): exponential 2s→32s
+    //   Phase 2 (attempts 6+): fixed 60s interval
+    // Serial/HTTP: exponential 2s→32s only
+    let delay: number;
+    if (isBle && reconnectAttemptRef.current > BLE_FAST_RECONNECT_ATTEMPTS) {
+      delay = BLE_PERIODIC_RECONNECT_MS;
+    } else {
+      delay = Math.min(2000 * Math.pow(2, reconnectAttemptRef.current - 1), 32_000);
+    }
     await new Promise((r) => setTimeout(r, delay));
 
     // Check if user manually disconnected or started a new connection during the wait
@@ -676,8 +762,7 @@ export function useDevice() {
 
     try {
       let device: MeshDevice;
-      if (params.type === "ble") {
-        // Try BLE reconnection without user gesture
+      if (isBle) {
         device = await reconnectBle();
       } else {
         device = await createConnection(params.type, params.httpAddress);

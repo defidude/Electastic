@@ -91,6 +91,23 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.send("serial-port-cancelled");
   },
 
+  // ─── Power events (macOS sleep/wake) ────────────────────────────
+  onPowerSuspend: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on("power-suspend", handler);
+    return () => {
+      ipcRenderer.removeListener("power-suspend", handler);
+    };
+  },
+
+  onPowerResume: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on("power-resume", handler);
+    return () => {
+      ipcRenderer.removeListener("power-resume", handler);
+    };
+  },
+
   // ─── Session management ────────────────────────────────────────
   clearSessionData: () => ipcRenderer.invoke("session:clearData"),
 });
