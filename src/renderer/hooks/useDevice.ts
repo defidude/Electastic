@@ -35,6 +35,8 @@ export function useDevice() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Track event unsubscribe functions for cleanup
   const unsubscribesRef = useRef<Array<() => void>>([]);
+  // Track emoji/replyId data from raw mesh packets (onMessagePacket strips them)
+  const packetEmojiDataRef = useRef<Map<number, { emoji?: number; replyId?: number }>>(new Map());
 
   // ─── Connection watchdog refs ─────────────────────────────────
   const lastDataReceivedRef = useRef<number>(Date.now());
@@ -277,22 +279,52 @@ export function useDevice() {
       });
       unsubscribesRef.current.push(unsub2);
 
+      // ─── Extract emoji/replyId from raw mesh packets ─────────
+      // onMessagePacket strips emoji/replyId from the event data, so we
+      // intercept onMeshPacket (which fires synchronously first) to capture them.
+      const unsubEmoji = device.events.onMeshPacket.subscribe((meshPacket: any) => {
+        if (meshPacket.payloadVariant?.case === "decoded") {
+          const decoded = meshPacket.payloadVariant.value;
+          if (decoded.emoji || decoded.replyId) {
+            packetEmojiDataRef.current.set(meshPacket.id, {
+              emoji: decoded.emoji || undefined,
+              replyId: decoded.replyId || undefined,
+            });
+          }
+        }
+      });
+      unsubscribesRef.current.push(unsubEmoji);
+
       // ─── Text messages ─────────────────────────────────────────
       const unsub3 = device.events.onMessagePacket.subscribe((packet) => {
         touchLastData();
         const isEcho = packet.from === myNodeNumRef.current;
-        const pkt = packet as typeof packet & { emoji?: number; replyId?: number; to?: number };
+
+        // Retrieve emoji/replyId captured from the raw mesh packet
+        const emojiData = packetEmojiDataRef.current.get(packet.id);
+        if (emojiData) packetEmojiDataRef.current.delete(packet.id);
+
+        // Normalize emoji: if emoji is just a flag (< 128), extract the
+        // actual codepoint from the payload text (Meshtastic convention is
+        // to put the emoji character in the payload).
+        let emoji = emojiData?.emoji;
+        const payload = packet.data as string;
+        if (emoji && emoji < 128 && payload) {
+          const cp = payload.codePointAt(0);
+          if (cp && cp > 127) emoji = cp;
+        }
+
         const msg: ChatMessage = {
           sender_id: packet.from,
           sender_name: getNodeName(packet.from),
-          payload: packet.data as string,
+          payload,
           channel: packet.channel ?? 0,
           timestamp: packet.rxTime?.getTime() ?? Date.now(),
           packetId: packet.id,
           status: isEcho ? "sending" : undefined,
-          emoji: pkt.emoji || undefined,
-          replyId: pkt.replyId || undefined,
-          to: pkt.to && pkt.to !== BROADCAST_ADDR ? pkt.to : undefined,
+          emoji,
+          replyId: emojiData?.replyId,
+          to: (packet as any).to && (packet as any).to !== BROADCAST_ADDR ? (packet as any).to : undefined,
         };
         setMessages((prev) => [...prev, msg]);
         window.electronAPI.db.saveMessage(msg);
@@ -735,7 +767,7 @@ export function useDevice() {
     setState({ status: "disconnected", myNodeNum: 0, connectionType: null });
   }, [cleanupSubscriptions, stopPolling, stopWatchdog, stopBleHeartbeat]);
 
-  const sendMessage = useCallback(async (text: string, channel = 0, destination?: number) => {
+  const sendMessage = useCallback(async (text: string, channel = 0, destination?: number, replyId?: number) => {
     if (!deviceRef.current) throw new Error("Not connected");
     try {
       const dest: number | "broadcast" = destination ?? "broadcast";
@@ -743,7 +775,8 @@ export function useDevice() {
         text,
         dest,
         true,
-        channel
+        channel,
+        replyId
       );
       // ACK received — update message status
       setMessages((prev) =>
@@ -783,11 +816,16 @@ export function useDevice() {
     }
   }, []);
 
-  // Send an emoji reaction (tapback) to a specific message
+  // Send an emoji reaction (tapback) to a specific message.
+  // The echo (fired synchronously by sendText) handles adding
+  // the reaction to local state via onMeshPacket + onMessagePacket.
   const sendReaction = useCallback(
-    async (emoji: number, replyId: number, channel = 0) => {
+    async (emoji: number, replyId: number, channel = 0, destination?: number) => {
       if (!deviceRef.current) throw new Error("Not connected");
-      await deviceRef.current.sendText("", "broadcast", true, channel, replyId, emoji);
+      const dest: number | "broadcast" = destination ?? "broadcast";
+      // Send emoji character in payload (Meshtastic convention) + codepoint in emoji field
+      const emojiChar = String.fromCodePoint(emoji);
+      await deviceRef.current.sendText(emojiChar, dest, true, channel, replyId, emoji);
     },
     []
   );

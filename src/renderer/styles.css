@@ -1,4 +1,3 @@
-@import "leaflet/dist/leaflet.css";
 @import "tailwindcss";
 
 /* Leaflet container needs explicit height */
@@ -6,6 +5,7 @@
   width: 100%;
   height: 100%;
 }
+
 
 /* Dark scrollbar */
 ::-webkit-scrollbar {

@@ -7,19 +7,17 @@ import NodeDetailModal from "./components/NodeDetailModal";
 import ConnectionPanel from "./components/ConnectionPanel";
 import ChatPanel from "./components/ChatPanel";
 import NodeListPanel from "./components/NodeListPanel";
-import ConfigPanel from "./components/ConfigPanel";
 import MapPanel from "./components/MapPanel";
 import TelemetryPanel from "./components/TelemetryPanel";
-import AdminPanel from "./components/AdminPanel";
+import SettingsPanel from "./components/SettingsPanel";
 
 const TAB_NAMES = [
   "Connection",
   "Chat",
   "Nodes",
-  "Config",
   "Map",
   "Telemetry",
-  "Admin",
+  "Settings",
 ];
 
 export default function App() {
@@ -37,7 +35,7 @@ export default function App() {
   // ─── Keyboard shortcuts: Cmd/Ctrl+1-7 for tabs ───────────────
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key >= "1" && e.key <= "7") {
+      if ((e.metaKey || e.ctrlKey) && e.key >= "1" && e.key <= "6") {
         e.preventDefault();
         setActiveTab(parseInt(e.key) - 1);
       }
@@ -82,9 +80,8 @@ export default function App() {
         >
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-bold text-green-400 tracking-wide">
-              Denver Mesh
+              Electastic
             </h1>
-            <span className="text-xs text-gray-500">Meshtastic Client</span>
           </div>
           <div className="flex items-center gap-2">
             <div className={`w-2.5 h-2.5 rounded-full ${statusColor}`} />
@@ -113,7 +110,7 @@ export default function App() {
         <Tabs tabs={TAB_NAMES} active={activeTab} onChange={setActiveTab} />
 
         {/* Content */}
-        <main className="flex-1 overflow-auto p-4">
+        <main className={`flex-1 p-4 ${activeTab === 5 ? "overflow-hidden" : "overflow-auto"}`}>
           <ErrorBoundary>
             {activeTab === 0 && (
               <ConnectionPanel
@@ -149,16 +146,6 @@ export default function App() {
               />
             )}
             {activeTab === 3 && (
-              <ConfigPanel
-                onSetConfig={device.setConfig}
-                onCommit={device.commitConfig}
-                onSetChannel={device.setDeviceChannel}
-                onClearChannel={device.clearChannel}
-                channelConfigs={device.channelConfigs}
-                isConnected={isOperational}
-              />
-            )}
-            {activeTab === 4 && (
               <MapPanel
                 nodes={device.nodes}
                 myNodeNum={device.state.myNodeNum}
@@ -166,15 +153,20 @@ export default function App() {
                 isConnected={isOperational}
               />
             )}
-            {activeTab === 5 && (
+            {activeTab === 4 && (
               <TelemetryPanel
                 telemetry={device.telemetry}
                 onRefresh={device.requestRefresh}
                 isConnected={isOperational}
               />
             )}
-            {activeTab === 6 && (
-              <AdminPanel
+            {activeTab === 5 && (
+              <SettingsPanel
+                onSetConfig={device.setConfig}
+                onCommit={device.commitConfig}
+                onSetChannel={device.setDeviceChannel}
+                onClearChannel={device.clearChannel}
+                channelConfigs={device.channelConfigs}
                 nodes={device.nodes}
                 messageCount={device.messages.length}
                 onReboot={device.reboot}

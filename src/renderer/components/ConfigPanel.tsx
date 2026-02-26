@@ -312,11 +312,7 @@ export default function ConfigPanel({
   };
 
   return (
-    <div className="max-w-lg mx-auto space-y-4">
-      <h2 className="text-xl font-semibold text-gray-200">
-        Device Configuration
-      </h2>
-
+    <div className="space-y-4">
       {!isConnected && (
         <div className="bg-yellow-900/30 border border-yellow-700 text-yellow-300 px-4 py-2 rounded-lg text-sm">
           Connect to a device to modify configuration.

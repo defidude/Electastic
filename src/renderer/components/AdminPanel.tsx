@@ -118,18 +118,16 @@ export default function AdminPanel({
   };
 
   return (
-    <div className="max-w-lg mx-auto space-y-6">
-      <h2 className="text-xl font-semibold text-gray-200">Administration</h2>
-
+    <div className="space-y-3">
       {!isConnected && (
-        <div className="bg-yellow-900/30 border border-yellow-700 text-yellow-300 px-4 py-2 rounded-lg text-sm">
+        <div className="bg-yellow-900/30 border border-yellow-700 text-yellow-300 px-3 py-1.5 rounded-lg text-xs">
           Connect to a device to use admin commands.
         </div>
       )}
 
       {/* Target Node */}
-      <div className="space-y-2">
-        <label className="text-sm text-gray-400">
+      <div className="space-y-1">
+        <label className="text-xs text-gray-400">
           Target Node (leave empty for self)
         </label>
         <input
@@ -138,14 +136,14 @@ export default function AdminPanel({
           onChange={(e) => setTargetNode(e.target.value)}
           disabled={!isConnected}
           placeholder="!aabbccdd or node number"
-          className="w-full px-3 py-2 bg-gray-700 rounded-lg text-gray-200 border border-gray-600 focus:border-green-500 focus:outline-none disabled:opacity-50"
+          className="w-full px-3 py-1.5 bg-gray-700 rounded-lg text-sm text-gray-200 border border-gray-600 focus:border-green-500 focus:outline-none disabled:opacity-50"
         />
       </div>
 
-      {/* Device Commands */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-gray-400">Device Commands (affects connected device)</h3>
-        <div className="grid grid-cols-2 gap-2">
+      {/* Device Commands (includes network diagnostics) */}
+      <div className="space-y-2">
+        <h3 className="text-xs font-medium text-gray-400">Device Commands</h3>
+        <div className="grid grid-cols-2 gap-1.5">
           <button
             onClick={() =>
               executeWithConfirmation({
@@ -158,7 +156,7 @@ export default function AdminPanel({
               })
             }
             disabled={!isConnected}
-            className="px-4 py-3 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-2 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
             Reboot
           </button>
@@ -175,7 +173,7 @@ export default function AdminPanel({
               })
             }
             disabled={!isConnected}
-            className="px-4 py-3 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-2 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
             Shutdown
           </button>
@@ -192,7 +190,7 @@ export default function AdminPanel({
               })
             }
             disabled={!isConnected}
-            className="px-4 py-3 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-2 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
             Reset NodeDB
           </button>
@@ -210,19 +208,11 @@ export default function AdminPanel({
               })
             }
             disabled={!isConnected}
-            className="px-4 py-3 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-2 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
             Factory Reset
           </button>
-        </div>
-      </div>
 
-      {/* Trace Route */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-gray-400">
-          Network Diagnostics
-        </h3>
-        <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() => {
               const target = getTargetNodeNum();
@@ -240,7 +230,7 @@ export default function AdminPanel({
               }
             }}
             disabled={!isConnected || !targetNode}
-            className="px-4 py-3 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-2 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
             Trace Route
           </button>
@@ -261,23 +251,17 @@ export default function AdminPanel({
               }
             }}
             disabled={!isConnected || !targetNode}
-            className="px-4 py-3 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-2 bg-gray-700 text-gray-300 hover:bg-gray-600 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors"
           >
             Remove Node
           </button>
         </div>
       </div>
 
-      {/* Data Management */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-gray-400">
-          Data Management
-        </h3>
-        <p className="text-xs text-gray-500">
-          Export your local database (messages &amp; nodes) as a .db file, or
-          import/merge another user's database into yours.
-        </p>
-        <div className="grid grid-cols-2 gap-2">
+      {/* Data — export/import + local clear */}
+      <div className="space-y-2">
+        <h3 className="text-xs font-medium text-gray-400">Data</h3>
+        <div className="grid grid-cols-2 gap-1.5">
           <button
             onClick={async () => {
               try {
@@ -294,7 +278,7 @@ export default function AdminPanel({
                 );
               }
             }}
-            className="px-4 py-3 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-2 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors"
           >
             Export Database
           </button>
@@ -318,19 +302,11 @@ export default function AdminPanel({
                 );
               }
             }}
-            className="px-4 py-3 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-2 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors"
           >
             Import &amp; Merge
           </button>
-        </div>
-      </div>
 
-      {/* Local Database Actions */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-medium text-gray-400">
-          Local Database
-        </h3>
-        <div className="grid grid-cols-2 gap-2">
           <button
             onClick={() =>
               executeWithConfirmation({
@@ -344,7 +320,7 @@ export default function AdminPanel({
                 },
               })
             }
-            className="px-4 py-3 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-2 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors"
           >
             Clear Messages ({messageCount})
           </button>
@@ -362,7 +338,7 @@ export default function AdminPanel({
                 },
               })
             }
-            className="px-4 py-3 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors"
+            className="px-3 py-2 bg-gray-700 text-gray-300 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors"
           >
             Clear Nodes ({nodes.size})
           </button>
@@ -383,20 +359,11 @@ export default function AdminPanel({
                 },
               })
             }
-            className="col-span-2 px-4 py-3 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded-lg text-sm font-medium transition-colors"
+            className="col-span-2 px-3 py-2 bg-red-900/50 text-red-300 hover:bg-red-900/70 border border-red-800 rounded-lg text-sm font-medium transition-colors"
           >
             Clear All Local Data &amp; Cache
           </button>
         </div>
-      </div>
-
-      {/* Warning */}
-      <div className="bg-red-900/20 border border-red-900 rounded-lg p-4 text-sm text-red-400 space-y-1">
-        <p className="font-medium">Warning</p>
-        <p>
-          Factory Reset will erase all device settings and restore defaults.
-          This action cannot be undone.
-        </p>
       </div>
 
       {/* Confirmation Modal */}

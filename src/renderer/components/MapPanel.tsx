@@ -1,5 +1,5 @@
-import { useEffect, useMemo } from "react";
-import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { useEffect, useMemo, useRef, useCallback } from "react";
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import type { MeshNode } from "../lib/types";
 import { getNodeStatus } from "../lib/nodeStatus";
@@ -80,18 +80,49 @@ interface Props {
 const DEFAULT_CENTER: [number, number] = [40.1672, -105.1019];
 const DEFAULT_ZOOM = 12;
 
-// Auto-fit map to show all nodes
+// Module-level state that survives unmount/remount across tab switches.
+// Once the user manually pans or zooms, we lock to their view for the session.
+let savedCenter: [number, number] | null = null;
+let savedZoom: number | null = null;
+let userHasInteracted = false;
+
+// Tracks user map interactions and saves view state
+function MapViewTracker() {
+  const map = useMapEvents({
+    moveend() {
+      const c = map.getCenter();
+      savedCenter = [c.lat, c.lng];
+      savedZoom = map.getZoom();
+      userHasInteracted = true;
+    },
+    zoomend() {
+      const c = map.getCenter();
+      savedCenter = [c.lat, c.lng];
+      savedZoom = map.getZoom();
+      userHasInteracted = true;
+    },
+  });
+  return null;
+}
+
+// Auto-fit map to show all nodes — only runs on first mount when user hasn't interacted
 function MapFitter({ positions }: { positions: [number, number][] }) {
   const map = useMap();
+  const lastFittedCount = useRef(0);
   useEffect(() => {
+    // If user has manually panned/zoomed, never auto-fit
+    if (userHasInteracted) return;
     if (positions.length === 0) return;
+    // Only auto-fit when the node count increases (new nodes discovered)
+    if (positions.length <= lastFittedCount.current) return;
+    lastFittedCount.current = positions.length;
     if (positions.length === 1) {
       map.flyTo(positions[0], map.getZoom());
     } else {
       const bounds = L.latLngBounds(positions.map(([lat, lng]) => L.latLng(lat, lng)));
       map.flyToBounds(bounds, { padding: [50, 50], maxZoom: 15 });
     }
-  }, [positions.length, map]); // only re-fit when count changes
+  }, [positions.length, map]);
   return null;
 }
 
@@ -153,10 +184,11 @@ export default function MapPanel({ nodes, myNodeNum, onRefresh, isConnected }: P
       </div>
 
       <MapContainer
-        center={center}
-        zoom={DEFAULT_ZOOM}
+        center={savedCenter ?? center}
+        zoom={savedZoom ?? DEFAULT_ZOOM}
         className="h-full w-full"
       >
+        <MapViewTracker />
         <MapFitter positions={positions} />
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
