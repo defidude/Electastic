@@ -82,7 +82,7 @@ export default function App() {
         >
           <div className="flex items-center gap-3">
             <h1 className="text-lg font-bold text-green-400 tracking-wide">
-              Electastic
+              Denver Mesh
             </h1>
             <span className="text-xs text-gray-500">Meshtastic Client</span>
           </div>
