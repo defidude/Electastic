@@ -1,4 +1,8 @@
-# Electastic
+# This project has moved and is deprecated.
+
+### The client is now being maintained by [Joey (NV0N)](https://github.com/rinchen) in the [Colorado Mesh](https://github.com/Colorado-Mesh/meshtastic-client) repo.
+
+## Electastic
 
 A cross-platform Meshtastic desktop client for **Mac**, **Linux**, and **Windows**.
 
@@ -65,17 +69,6 @@ Should work out of the box. If serial isn't detected, make sure you have the cor
 
 ---
 
-## Connecting Your Device
-
-1. **Power on** your Meshtastic device
-2. **Put it in Bluetooth pairing mode** (if connecting via BLE)
-3. Open Electastic and go to the **Connection** tab
-4. Select your connection type (Bluetooth / USB Serial / WiFi)
-5. Click **Connect** and select your device from the picker
-6. Wait for status to show **Configured** — you're connected!
-
----
-
 ## Building the Distributable
 
 ```bash
@@ -91,9 +84,6 @@ The distributable is output to the `release/` directory.
 
 ## Features
 
-- **Bluetooth LE** — pair wirelessly with nearby Meshtastic devices
-- **USB Serial** — plug in via USB cable
-- **WiFi/HTTP** — connect to network-enabled nodes
 - **Chat** — send/receive messages across channels with delivery indicators (ACK/NAK) and emoji reactions (tapback)
 - **Channel Management** — create and configure channels with custom names and PSK encryption
 - **Node List** — all discovered nodes with SNR, battery, GPS, last heard
@@ -103,79 +93,6 @@ The distributable is output to the `release/` directory.
 - **Radio Config** — region, modem preset, device role, GPS, power, Bluetooth, display settings
 - **Admin** — reboot, shutdown, factory reset, trace route, node removal, DB export/import/clear
 - **Persistent Storage** — messages and nodes saved locally via SQLite
-- **Dark UI** — custom scrollbar, tab icons, polished chat bubbles
-
----
-
-## Connection Types
-
-| Platform | Bluetooth | Serial | HTTP |
-|----------|-----------|--------|------|
-| macOS    | Yes       | Yes    | Yes  |
-| Windows  | Yes       | Yes    | Yes  |
-| Linux    | Partial   | Yes    | Yes  |
-
----
-
-## Tech Stack
-
-| Component  | Technology                                |
-|------------|-------------------------------------------|
-| Desktop    | Electron                                  |
-| UI         | React 19 + TypeScript                     |
-| Styling    | Tailwind CSS v4                           |
-| Meshtastic | @meshtastic/core (JSR)                    |
-| Maps       | Leaflet + OpenStreetMap                   |
-| Charts     | Recharts                                  |
-| Database   | SQLite (better-sqlite3)                   |
-| Build      | esbuild + Vite + electron-builder         |
-
----
-
-## Project Structure
-
-```
-src/
-├── main/           # Electron main process (window, BLE handler, SQLite)
-├── preload/        # Context bridge (IPC)
-└── renderer/       # React app
-    ├── components/ # All UI panels (Chat, Nodes, Map, Config, etc.)
-    ├── hooks/      # useDevice — Meshtastic device state management
-    └── lib/        # Transport setup, TypeScript types
-```
-
----
-
-## Troubleshooting
-
-### `npm install` fails during electron-rebuild
-
-You're missing build tools for compiling the native SQLite module:
-- **Mac**: `xcode-select --install`
-- **Linux**: `sudo apt install build-essential python3`
-- **Windows**: Install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload
-
-### BLE connection fails with "Connection attempt failed"
-
-- Make sure your device has Bluetooth enabled and is in **pairing mode**
-- On macOS: Check **System Settings > Privacy & Security > Bluetooth**
-- Try disconnecting fully first, then reconnecting
-- If the device picker never appears, restart the app
-
-### Serial port not detected
-
-- Ensure your USB drivers are installed for your device (CP210x, CH340, etc.)
-- On Linux, add yourself to the `dialout` group: `sudo usermod -a -G dialout $USER`
-
-### App crashes on launch (macOS distributable)
-
-- This may be a native module signing issue — try rebuilding: `npm run dist:mac`
-- If building from source: make sure `npm install` completed without errors
-
-### App shows "disconnected" but device is still on
-
-- The Bluetooth connection can drop silently. Click Disconnect, then Connect again
-- For serial: the USB cable may have been bumped — reconnect
 
 ---
 
@@ -185,4 +102,4 @@ MIT — see [LICENSE](LICENSE)
 
 ## Credits
 
-See [CREDITS.md](CREDITS.md). Special thanks to **Joey (NV0N)** for the original Meshtastic Mac Client that inspired this project, and the Denver Mesh community.
+See [CREDITS.md](CREDITS.md). Special thanks to **Joey (NV0N)** for the original Meshtastic Mac Client that this project aws based on, and the Denver Mesh community.
